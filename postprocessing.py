@@ -32,3 +32,14 @@ class FormResults(object):
         self.gfunchist = gfunchist
         self.gradGhist = gradGhist
         self.stephist = stephist
+
+
+class ReliabilityResults(object):
+    """ postprocessing results of FORM analysis"""
+    def __init__(self, beta, pf):
+        """ results of reliability analysis
+            beta: reliability
+            pf: failure probability
+        """
+        self.beta = beta
+        self.pf = pf
