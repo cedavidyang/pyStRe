@@ -4,7 +4,8 @@ import scipy.stats as stats
 import scipy.optimize as op
 from probdata import ProbData
 from analysisopt import AnalysisOpt
-from postprocessing import FormResults
+from postprocessing import FormResults, ReliabilityResults
+from gfunc import Gfunc
 
 
 def _search_dir(G, grad_G, u):
@@ -269,6 +270,7 @@ class SysReliab(object):
             beta[i] = formresults.beta1
             alpha[i,:] = self._expand_alpha(comp.probdata.names, formresults.alpha)
         self.beta = beta
+        self.alpha = alpha
         R = np.dot(alpha,alpha.T)  # alpha is a matrix with alpha of the i-th limit state on the i-th column
         R=R-np.diag(np.diag(R))+np.eye(R.shape[0])
         self.syscorr = R
@@ -338,6 +340,52 @@ class SysReliab(object):
                 #formresults.imptg = -formresults.imptg
 
         return formresults
+
+
+    def direct_msr(self, tol=1e-7, intLb=-6, intUb=6):
+        def integrnd(beta, r, cutset, systype, *param):
+            nparam = len(param)
+            s = param
+            ps = stats.norm.cdf((-beta-np.dot(r,s))/np.sqrt(1-np.sum(r**2, axis=-1)))
+            if systype.lower() == 'parallel':
+                intval = np.prod(ps)*stats.multivariate_normal.pdf(s,mean=None,cov=np.eye(nparam))
+            elif systype.lower() == 'series':
+                intval = np.prod(1-ps)*stats.multivariate_normal.pdf(s,mean=None,cov=np.eye(nparam))
+            if systype.lower() == 'general':
+                # code later
+                intval = 0
+            return intval
+        systype = self.systype
+        cutset = None
+        beta = self.beta
+        if (self.nCSrv is not None) and (self.rmtx is not None):
+            ncsrv = self.nCSrv
+            r = self.rmtx
+        else:
+            print('assign common source random variables first')
+            sys.exit(1)
+        import scipy.integrate as intg
+        if self.nCSrv==1:
+            intsol = intg.quad(lambda x: integrnd(beta, r, cutset, systype, x), intLb, intUb, epsabs=tol)
+        elif self.nCSrv==2:
+            intsol = intg.dblquad(lambda x,y: integrnd(beta, r, cutset, systype, x,y), intLb, intUb,
+                    lambda x: intLb, lambda x: intUb, epsabs=tol)
+        elif self.nCSrv==3:
+            intsol = intg.tplquad(lambda x,y,z: integrnd(beta, r, cutset, systype, x,y,z), intLb, intUb,
+                    lambda x: intLb, lambda x: intUb,
+                    lambda x: intLb, lambda x: intUb, epsabs=tol)
+        else:
+            print 'Direct integration does not support nCSrv>3'
+            sys.exit(1)
+
+        if systype == 'series':
+            syspf = 1.-intsol[0]
+        else:
+            syspf = intsol[0]
+        sysbeta = stats.norm.ppf(1-syspf)
+        results = ReliabilityResults(sysbeta, syspf)
+
+        return results
 
 
 if __name__ == '__main__':
