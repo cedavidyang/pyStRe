@@ -276,11 +276,11 @@ class SysReliab(object):
         self.syscorr = R
 
 
-    def set_nCSrv(self, nCSrv=None, tol=0.01):
+    def set_nCSrv(self, nCSrv=None, tol=0.01, nmax=10):
         if nCSrv is None:
             nCSrv = 1
             itercr = 1.0
-            while itercr>tol:
+            while itercr>tol and nCSrv<=nmax:
                 r, corrDS, rescheck, iterres = _gen_DS_solver(self.syscorr, nCSrv)
                 itercr = iterres[0]
                 nCSrv += 1
