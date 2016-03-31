@@ -14,7 +14,7 @@ def _search_dir(G, grad_G, u):
     return d
 
 
-def _gen_DS_solver(corrT, ncsrv):
+def _gen_DS_solver(corrT, ncsrv, tol, ntrial):
     """ corrT: target correlation
         ncsrv: number of common source random variables
     """
@@ -22,8 +22,7 @@ def _gen_DS_solver(corrT, ncsrv):
     lb=-np.ones((nrv,ncsrv))
     ub=np.ones((nrv,ncsrv))
     bnds = np.asfarray([lb.flatten(),ub.flatten()]).T
-    #initr = np.random.rand(nrv,ncsrv)
-    initr = 0.5*np.ones((nrv,ncsrv))
+    #initr = 0.5*np.ones((nrv,ncsrv))
 
     def residual_gen_DS(r, corrT, ncsrv):
         nrv = corrT.shape[1]
@@ -48,14 +47,29 @@ def _gen_DS_solver(corrT, ncsrv):
         #'MaxFunEvals',10^5,'MaxIter',10^4,'TolCon',10^-7,'GradConstr','on'); 
     #[r,fval,exitflag]=fmincon(@(r)residual_gen_DS(r,R),IC,[],[],[],[],...
         #lb,ub,@(r)cons_gen_DS(r),options);
-    opres = op.minimize(residual_gen_DS, initr, args=(corrT, ncsrv), bounds=bnds,
-            #constraints={'type':'ineq', 'fun':con_gen_DS, 'jac':congrad_gen_DS, 'args':(nrv,ncsrv)}, tol=1e-16,
-            constraints={'type':'ineq', 'fun':con_gen_DS, 'args':(nrv,ncsrv)}, tol=1e-16,
-            options={'maxiter':int(1e4), 'disp':False})
-    r = opres.x
-    #fval = opres.fun
-    msg = opres.message
-    exitflag = opres.success
+    fval = 1.0
+    #initr0 = np.random.rand(nrv,ncsrv)*2.-1.
+    initr0 = 0.5*np.ones((nrv,ncsrv))
+    initr = np.copy(initr0)
+    opres_array = []
+    for itrial in xrange(ntrial):
+        indx = np.random.permutation(np.arange(nrv*ncsrv))[:np.floor(nrv*ncsrv/2)]
+        tmpInitr = initr0.flatten()
+        tmpInitr[indx] = -tmpInitr[indx]
+        initr = tmpInitr.reshape((nrv,ncsrv))
+        opres = op.minimize(residual_gen_DS, initr, args=(corrT, ncsrv), bounds=bnds,
+                #constraints={'type':'ineq', 'fun':con_gen_DS, 'jac':congrad_gen_DS, 'args':(nrv,ncsrv)}, tol=1e-16,
+                constraints={'type':'ineq', 'fun':con_gen_DS, 'args':(nrv,ncsrv)}, tol=1e-16,
+                options={'maxiter':int(1e4), 'disp':False})
+        fval = opres.fun
+        opres_array.append(opres)
+        if fval<tol:
+            break
+    fvals = [opres.fun for opres in opres_array]
+    indx = np.nanargmin(fvals)
+    r = opres_array[indx].x
+    msg = opres_array[indx].message
+    exitflag = opres_array[indx].success
 
     rmatrix = np.resize(r,(nrv,ncsrv))
     rescheck=np.sum(rmatrix**2,axis=1)
@@ -73,6 +87,25 @@ def _gen_DS_solver(corrT, ncsrv):
     iterres =[normerr,msg,exitflag]
 
     return rmatrix, corrDS, rescheck, iterres
+
+
+def _prob_vector(pmrg):
+    for i in xrange(np.size(pmrg)):
+        if i == 0:
+            p = np.array([pmrg[i], 1.-pmrg[i]])
+        else:
+            p = np.hstack((p*pmrg[i], p*(1.-pmrg[i])))
+    return p
+
+
+def _event_matrix(nevent):
+    for i in xrange(nevent):
+        if i==0:
+            C = np.array([1., 0.])
+        else:
+            C = np.hstack( ( np.vstack((C,np.ones(C.shape[1]))),
+                    np.vstack((C,np.zeros(C.shape[1]))) ) )
+    return C
 
 
 class CompReliab(object):
@@ -251,6 +284,41 @@ class SysReliab(object):
             self.syscorr = syscorr
         self.nCSrv = None
         self.rmtx = None
+        ncomp = np.max(np.abs(self.sysdef[0]))
+        sys.cutset = None
+        #C = _event_matrix(ncomp)
+        #self._sys_event(C)
+
+
+    def _sys_event(self, C):
+        sysdef = self.sysdef
+        row,col = C.shape
+
+        if self.systype.lower() == 'series':
+            self.cutset = 1-np.prod(np.ones((row,col))-C, axis=1, dtype=int)
+            ncutsets = []
+        elif self.systype.lower() == 'parallel':
+            self.cutset = np.prod(C,axis=1,dtype=int)
+            ncutsets = []
+        else:
+            if self.sysdef[1].lower() == 'link':
+                self.sysdef = -self.sysdef
+            self.sysdef[0] = np.hstack((0,self.sysdef[0],0))
+            sysnonzero = np.find(self.sysdef[0]!=0)[0]
+            syszero = np.find(self.sysdef[0]==0)[0]
+            int1 = syszero-np.hstack((0,syszero[:-1]))
+            sizeCutSets = int1[int1>1]-1
+            ncutsets = sizeCutSets.shape[0]
+            for i in xrange(ncutsets):
+                cCutSet = np.ones(row,1)
+                for j in xrange(sizeCutSets[i]):
+                    comp = self.sysdef[0][sysnonzero[np.sum(sizeCutSets[:i])+j]]
+                    if comp<0:
+                        cCutSet = cCutSet*(np.ones((row,1))-C.T[:,abs(comp)])
+                    else:
+                        cCutSet = cCutSet*C.T[:,comp]
+                cCutSets[:,i] = cCutSet
+            self.cutset = np.ones(row,1)-np.prod(np.ones(row,ncutsets)-cCutSets,axis=1)
 
 
     def _expand_alpha(self, cmpNames, cmpAlpha):
@@ -276,17 +344,17 @@ class SysReliab(object):
         self.syscorr = R
 
 
-    def set_nCSrv(self, nCSrv=None, tol=0.01, nmax=10):
+    def set_nCSrv(self, nCSrv=None, tol=0.01, nmax=10, ntrial=5):
         if nCSrv is None:
             nCSrv = 1
             itercr = 1.0
             while itercr>tol and nCSrv<=nmax:
-                r, corrDS, rescheck, iterres = _gen_DS_solver(self.syscorr, nCSrv)
+                r, corrDS, rescheck, iterres = _gen_DS_solver(self.syscorr, nCSrv, tol, ntrial)
                 itercr = iterres[0]
                 nCSrv += 1
             nCSrv -= 1
         else:
-            r, corrDS, rescheck, iterres = _gen_DS_solver(self.syscorr, nCSrv)
+            r, corrDS, rescheck, iterres = _gen_DS_solver(self.syscorr, nCSrv, tol, ntrial)
         self.nCSrv, self.rmtx = nCSrv, r
 
 
@@ -352,10 +420,12 @@ class SysReliab(object):
             elif systype.lower() == 'series':
                 intval = np.prod(1-ps)*stats.multivariate_normal.pdf(s,mean=None,cov=np.eye(nparam))
             if systype.lower() == 'general':
-                # code later
-                intval = 0
+                p = _prob_vector(ps)
+                intval = np.dot(cutset.T, p)*stats.multivariate_normal.pdf(s,mean=None,cov=np.eye(nparam))
+                # how to get cutset need to be further coded
             return intval
         systype = self.systype
+        #cutset = self.cutset
         cutset = None
         beta = self.beta
         if (self.nCSrv is not None) and (self.rmtx is not None):
