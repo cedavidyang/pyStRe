@@ -48,11 +48,12 @@ def _gen_DS_solver(corrT, ncsrv, tol, ntrial):
     #[r,fval,exitflag]=fmincon(@(r)residual_gen_DS(r,R),IC,[],[],[],[],...
         #lb,ub,@(r)cons_gen_DS(r),options);
     fval = 1.0
+    itrial = 0
     #initr0 = np.random.rand(nrv,ncsrv)*2.-1.
     initr0 = 0.5*np.ones((nrv,ncsrv))
     initr = np.copy(initr0)
     opres_array = []
-    for itrial in xrange(ntrial):
+    while fval>tol and itrial<ntrial:
         indx = np.random.permutation(np.arange(nrv*ncsrv))[:np.floor(nrv*ncsrv/2)]
         tmpInitr = initr0.flatten()
         tmpInitr[indx] = -tmpInitr[indx]
@@ -62,9 +63,11 @@ def _gen_DS_solver(corrT, ncsrv, tol, ntrial):
                 constraints={'type':'ineq', 'fun':con_gen_DS, 'args':(nrv,ncsrv)}, tol=1e-16,
                 options={'maxiter':int(1e4), 'disp':False})
         fval = opres.fun
+        if np.isnan(fval):
+            opres.x = np.zeros((nrv,ncsrv))
+            opres.fun = 1.0
         opres_array.append(opres)
-        if fval<tol:
-            break
+        itrial += 1
     fvals = [opres.fun for opres in opres_array]
     indx = np.nanargmin(fvals)
     r = opres_array[indx].x
