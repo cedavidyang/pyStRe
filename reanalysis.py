@@ -54,7 +54,7 @@ def _gen_DS_solver(corrT, ncsrv, tol, ntrial):
     initr = np.copy(initr0)
     opres_array = []
     while fval>tol and itrial<ntrial:
-        indx = np.random.permutation(np.arange(nrv*ncsrv))[:np.floor(nrv*ncsrv/2)]
+        indx = np.random.permutation(np.arange(nrv*ncsrv))[:int(np.floor(nrv*ncsrv/2))]
         tmpInitr = initr0.flatten()
         tmpInitr[indx] = -tmpInitr[indx]
         initr = tmpInitr.reshape((nrv,ncsrv))
