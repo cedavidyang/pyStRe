@@ -446,7 +446,7 @@ class SysReliab(object):
         elif self.nCSrv==3:
             intsol = intg.tplquad(lambda x,y,z: integrnd(beta, r, cutset, systype, x,y,z), intLb, intUb,
                     lambda x: intLb, lambda x: intUb,
-                    lambda x: intLb, lambda x: intUb, epsabs=tol)
+                    lambda y: intLb, lambda y: intUb, epsabs=tol)
         else:
             print 'Direct integration does not support nCSrv>3'
             sys.exit(1)
