@@ -18,29 +18,29 @@ def _gen_DS_solver(corrT, ncsrv, tol, ntrial):
     """ corrT: target correlation
         ncsrv: number of common source random variables
     """
-    nrv = corrT.shape[0]
-    lb=-np.ones((nrv,ncsrv))
-    ub=np.ones((nrv,ncsrv))
+    nls = corrT.shape[0]
+    lb=-np.ones((nls,ncsrv))
+    ub=np.ones((nls,ncsrv))
     bnds = np.asfarray([lb.flatten(),ub.flatten()]).T
-    #initr = 0.5*np.ones((nrv,ncsrv))
+    #initr = 0.5*np.ones((nls,ncsrv))
 
     def residual_gen_DS(r, corrT, ncsrv):
-        nrv = corrT.shape[1]
-        rmatrix = np.resize(r,(nrv,ncsrv))
+        nls = corrT.shape[1]
+        rmatrix = np.resize(r,(nls,ncsrv))
         corr = np.dot(rmatrix,rmatrix.T)
-        corr = corr-np.diag(np.diag(corr))+np.eye(nrv)
+        corr = corr-np.diag(np.diag(corr))+np.eye(nls)
         normR = np.linalg.norm(corrT-corr, ord='fro')
         return normR
-    def con_gen_DS(r, nrv, ncsrv, tol=1e-6):
-        rmatrix = np.resize(r,(nrv,ncsrv))
+    def con_gen_DS(r, nls, ncsrv, tol=1e-6):
+        rmatrix = np.resize(r,(nls,ncsrv))
         c = (1.-tol) - np.sum(rmatrix**2,axis=1)
         return c
     #def congrad_gen_DS(r, ncsrv):
-        #rmatrix = np.resize(r,(nrv,ncsrv))
-        #gradc = np.zeros((nrv,ncsrv*nrv))
+        #rmatrix = np.resize(r,(nls,ncsrv))
+        #gradc = np.zeros((nls,ncsrv*nls))
         #for icsrv in range(ncsrv):
             #gc = -2.*np.diag(rmatrix[:,icsrv])
-            #gradc[:,icsrv:(icsrv+ncsrv*nrv):ncsrv] = gc
+            #gradc[:,icsrv:(icsrv+ncsrv*nls):ncsrv] = gc
         #return gradc
 
     #options=optimset('Display','off','TolFun',10^-16,'LargeScale','off',...
@@ -49,22 +49,22 @@ def _gen_DS_solver(corrT, ncsrv, tol, ntrial):
         #lb,ub,@(r)cons_gen_DS(r),options);
     fval = 1.0
     itrial = 0
-    #initr0 = np.random.rand(nrv,ncsrv)*2.-1.
-    initr0 = 0.5*np.ones((nrv,ncsrv))
+    #initr0 = np.random.rand(nls,ncsrv)*2.-1.
+    initr0 = 0.5*np.ones((nls,ncsrv))
     initr = np.copy(initr0)
     opres_array = []
     while fval>tol and itrial<ntrial:
-        indx = np.random.permutation(np.arange(nrv*ncsrv))[:int(np.floor(nrv*ncsrv/2))]
+        indx = np.random.permutation(np.arange(nls*ncsrv))[:int(np.floor(nls*ncsrv/2))]
         tmpInitr = initr0.flatten()
         tmpInitr[indx] = -tmpInitr[indx]
-        initr = tmpInitr.reshape((nrv,ncsrv))
+        initr = tmpInitr.reshape((nls,ncsrv))
         opres = op.minimize(residual_gen_DS, initr, args=(corrT, ncsrv), bounds=bnds,
-                #constraints={'type':'ineq', 'fun':con_gen_DS, 'jac':congrad_gen_DS, 'args':(nrv,ncsrv)}, tol=1e-16,
-                constraints={'type':'ineq', 'fun':con_gen_DS, 'args':(nrv,ncsrv)}, tol=1e-16,
+                #constraints={'type':'ineq', 'fun':con_gen_DS, 'jac':congrad_gen_DS, 'args':(nls,ncsrv)}, tol=1e-16,
+                constraints={'type':'ineq', 'fun':con_gen_DS, 'args':(nls,ncsrv)}, tol=1e-16,
                 options={'maxiter':int(1e4), 'disp':False})
         fval = opres.fun
         if np.isnan(fval):
-            opres.x = np.zeros((nrv,ncsrv))
+            opres.x = np.zeros((nls,ncsrv))
             opres.fun = 1.0
         opres_array.append(opres)
         itrial += 1
@@ -74,7 +74,7 @@ def _gen_DS_solver(corrT, ncsrv, tol, ntrial):
     msg = opres_array[indx].message
     exitflag = opres_array[indx].success
 
-    rmatrix = np.resize(r,(nrv,ncsrv))
+    rmatrix = np.resize(r,(nls,ncsrv))
     rescheck=np.sum(rmatrix**2,axis=1)
     if any(rescheck>1):
         rng = rmatrix[rescheck>1,:]
@@ -85,7 +85,7 @@ def _gen_DS_solver(corrT, ncsrv, tol, ntrial):
         rescheck=np.sum(rmatrix**2,axis=1)
 
     corrDS = np.dot(rmatrix,rmatrix.T)
-    corrDS = corrDS-np.diag(np.diag(corrDS))+np.eye(nrv)
+    corrDS = corrDS-np.diag(np.diag(corrDS))+np.eye(nls)
     normerr = np.linalg.norm(corrDS-corrT)
     iterres =[normerr,msg,exitflag]
 
@@ -347,7 +347,7 @@ class SysReliab(object):
         self.syscorr = R
 
 
-    def set_nCSrv(self, nCSrv=None, tol=0.01, nmax=10, ntrial=5):
+    def set_nCSrv(self, nCSrv=None, tol=1e-6, nmax=10, ntrial=5):
         if nCSrv is None:
             nCSrv = 1
             itercr = 1.0
@@ -358,7 +358,7 @@ class SysReliab(object):
             nCSrv -= 1
         else:
             r, corrDS, rescheck, iterres = _gen_DS_solver(self.syscorr, nCSrv, tol, ntrial)
-        self.nCSrv, self.rmtx = nCSrv, r
+        self.nCSrv, self.rmtx, self.syscorrDS = nCSrv, r, corrDS
 
 
     def form_msr(self, analysisopt=None):
@@ -446,7 +446,7 @@ class SysReliab(object):
         elif self.nCSrv==3:
             intsol = intg.tplquad(lambda x,y,z: integrnd(beta, r, cutset, systype, x,y,z), intLb, intUb,
                     lambda x: intLb, lambda x: intUb,
-                    lambda y: intLb, lambda y: intUb, epsabs=tol)
+                    lambda x,y: intLb, lambda x,y: intUb, epsabs=tol)
         else:
             print 'Direct integration does not support nCSrv>3'
             sys.exit(1)
@@ -457,6 +457,39 @@ class SysReliab(object):
             syspf = intsol[0]
         sysbeta = stats.norm.ppf(1-syspf)
         results = ReliabilityResults(sysbeta, syspf)
+
+        return results
+
+    def mvn_msr(self, corrDS=None, tol=1e-7, intLb=-10, intUb=10):
+        systype = self.systype
+        beta = self.beta
+        nls = len(self.comps)
+        if corrDS is None:
+            correl = self.syscorrDS[np.triu_indices(nls,1)]
+        else:
+            correl = corrDS[np.triu_indices(nls,1)]
+        if corrDS is None:
+            corrDS = self.syscorrDS
+        i=1; n=10000; syspf0=0.; dpf=1.
+        # while i!=0:
+            # n +=10000
+            # v,res,i = stats.mvn.mvndst(intLb*np.ones(nls), beta, np.zeros(nls, dtype=int), correl, [nls*n,1e-12, 1e-12])
+        while i!=0:
+            n+=10000
+            res,i = stats.mvn.mvnun(-10*np.ones(nls), beta, np.zeros(nls), corrDS, [nls*n, 1e-12, 1e-12])
+        # if abs(res-res1)/(0.5*(res+res1))>1e-3:
+            # print 'warning: abnormal difference between mvnun and mvndst results'
+        if systype.lower() == 'series':
+            syspf = 1.-res
+            sysbeta = -stats.norm.ppf(syspf)
+            results = ReliabilityResults(sysbeta, syspf)
+        elif systype.lower() == 'parallel':
+            syspf = res
+            sysbeta = -stats.norm.ppf(syspf)
+            results = ReliabilityResults(sysbeta, syspf)
+        else:
+            print('mvn_msr only supports series or parallel system')
+            sys.exit(0)
 
         return results
 
