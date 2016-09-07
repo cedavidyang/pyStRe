@@ -460,7 +460,7 @@ class SysReliab(object):
 
         return results
 
-    def mvn_msr(self, corrDS=None, tol=1e-7, intLb=-10, intUb=10):
+    def mvn_msr(self, corrDS=None, abstol=1e-12, reltol=1e-12, intLb=-10, intUb=10):
         systype = self.systype
         beta = self.beta
         nls = len(self.comps)
@@ -476,7 +476,7 @@ class SysReliab(object):
             # v,res,i = stats.mvn.mvndst(intLb*np.ones(nls), beta, np.zeros(nls, dtype=int), correl, [nls*n,1e-12, 1e-12])
         while i!=0:
             n+=10000
-            res,i = stats.mvn.mvnun(-10*np.ones(nls), beta, np.zeros(nls), corrDS, [nls*n, 1e-12, 1e-12])
+            res,i = stats.mvn.mvnun(-10*np.ones(nls), beta, np.zeros(nls), corrDS, [nls*n, abstol, reltol])
         # if abs(res-res1)/(0.5*(res+res1))>1e-3:
             # print 'warning: abnormal difference between mvnun and mvndst results'
         if systype.lower() == 'series':
