@@ -104,12 +104,27 @@ def _prob_vector(pmrg):
 def _event_matrix(nevent):
     for i in xrange(nevent):
         if i==0:
-            C = np.array([1., 0.])
+            C = np.array([[1.], [0.]])
         else:
-            C = np.hstack( ( np.vstack((C,np.ones(C.shape[1]))),
-                    np.vstack((C,np.zeros(C.shape[1]))) ) )
+            lenC = np.max(np.shape(C))
+            C1 = np.hstack( (C, np.ones((lenC,1))) )
+            C2 = np.hstack( (C,np.zeros((lenC,1))) )
+            C = np.vstack((C1,C2))
     return C
 
+
+def _p_vector_mod(pmarg, compn):
+    for i,pi in enumerate(pmarg):
+        if i == compn-1:
+            pComp = 1.; pCompComp = -1.
+        else:
+            pComp = pi; pCompComp = 1.-pi
+        if i == 0:
+            p = np.hstack((pComp, pCompComp))
+        else:
+            p = np.hstack((p*pComp, p*pCompComp))
+
+    return p
 
 class CompReliab(object):
 
@@ -288,9 +303,8 @@ class SysReliab(object):
         self.nCSrv = None
         self.rmtx = None
         ncomp = np.max(np.abs(self.sysdef[0]))
-        sys.cutset = None
-        #C = _event_matrix(ncomp)
-        #self._sys_event(C)
+        C = _event_matrix(ncomp)
+        self._sys_event(C)
 
 
     def _sys_event(self, C):
@@ -301,27 +315,30 @@ class SysReliab(object):
             self.cutset = 1-np.prod(np.ones((row,col))-C, axis=1, dtype=int)
             ncutsets = []
         elif self.systype.lower() == 'parallel':
-            self.cutset = np.prod(C,axis=1,dtype=int)
+            self.cutset = np.prod(C, axis=1, dtype=int)
             ncutsets = []
         else:
-            if self.sysdef[1].lower() == 'link':
-                self.sysdef = -self.sysdef
-            self.sysdef[0] = np.hstack((0,self.sysdef[0],0))
-            sysnonzero = np.find(self.sysdef[0]!=0)[0]
-            syszero = np.find(self.sysdef[0]==0)[0]
+            syscode = np.array(sysdef[0])
+            systype = sysdef[1]
+            if systype.lower() == 'link':
+                syscode = -syscode
+            syscode = np.hstack((0,syscode,0))
+            sysnonzero = np.where(syscode!=0)[0]
+            syszero = np.where(syscode==0)[0]
             int1 = syszero-np.hstack((0,syszero[:-1]))
             sizeCutSets = int1[int1>1]-1
-            ncutsets = sizeCutSets.shape[0]
+            ncutsets = np.max(sizeCutSets.shape)
+            cCutSets = np.zeros((row, ncutsets))
             for i in xrange(ncutsets):
-                cCutSet = np.ones(row,1)
+                cCutSet = np.ones(row)
                 for j in xrange(sizeCutSets[i]):
-                    comp = self.sysdef[0][sysnonzero[np.sum(sizeCutSets[:i])+j]]
+                    comp = syscode[sysnonzero[np.sum(sizeCutSets[:i])+j]]
                     if comp<0:
-                        cCutSet = cCutSet*(np.ones((row,1))-C.T[:,abs(comp)])
+                        cCutSet = cCutSet*(np.ones((row,1))-C[:,abs(comp)-1])
                     else:
-                        cCutSet = cCutSet*C.T[:,comp]
+                        cCutSet = cCutSet*C[:,comp-1]
                 cCutSets[:,i] = cCutSet
-            self.cutset = np.ones(row,1)-np.prod(np.ones(row,ncutsets)-cCutSets,axis=1)
+            self.cutset = np.ones(row) - np.prod(np.ones((row,ncutsets))-cCutSets, axis=1)
 
 
     def _expand_alpha(self, cmpNames, cmpAlpha):
@@ -346,6 +363,21 @@ class SysReliab(object):
         R=R-np.diag(np.diag(R))+np.eye(R.shape[0])
         self.syscorr = R
 
+    def update_setup_sys(self, compindx):
+        ncomp = np.size(self.comps)
+        nrv = np.size(self.rvnames)
+        beta = np.zeros(ncomp)
+        alpha = np.zeros((ncomp, nrv))
+        for i in compindx:
+            comp = self.comps[i]
+            formresults = comp.form_result()
+            self.beta[i] = formresults.beta1
+            sefl.alpha[i,:] = self._expand_alpha(comp.probdata.names, formresults.alpha)
+        beta = self.beta
+        alpha = self.alpha
+        R = np.dot(alpha,alpha.T)  # alpha is a matrix with alpha of the i-th limit state on the i-th column
+        R=R-np.diag(np.diag(R))+np.eye(R.shape[0])
+        self.syscorr = R
 
     def set_nCSrv(self, nCSrv=None, tol=1e-6, nmax=10, ntrial=5):
         if nCSrv is None:
@@ -363,7 +395,7 @@ class SysReliab(object):
 
     def form_msr(self, analysisopt=None):
         systype = self.systype
-        cutset = None
+        cutset = self.cutset
         beta = self.beta
         if (self.nCSrv is not None) and (self.rmtx is not None):
             ncsrv = self.nCSrv
@@ -382,11 +414,17 @@ class SysReliab(object):
 
         def gf_dgf(s, cutset, systype, beta, r, param=None):
             pmarg = stats.norm.cdf( (-beta-np.dot(r,s[:-1]))/np.sqrt(1.-np.sum(r**2,axis=1)) )
-            dpds = np.dot(-np.diag(pmarg/np.sqrt(1-np.sum(r**2,axis=1))),r)
+            dPds = -np.diag(stats.norm.pdf((-beta-r.dot(s[:-1]))/np.sqrt(1-np.sum(r**2,axis=1))) /
+                        np.sqrt(1-np.sum(r**2,axis=1))).dot(r)
             if systype.lower() == 'general':
-                # code later
-                gf = []
-                dgf = []
+                p = _prob_vector(pmarg)
+                gf = s[-1] - stats.norm.ppf(cutset.dot(p))
+                ph = np.zeros((2**(beta.size), beta.size))
+                for i,betai in enumerate(beta):
+                    pMargMod = _p_vector_mod(pmarg,i+1)
+                    ph[:,i] = pMargMod
+                dpds = ph.dot(dPds)
+                dgf = np.hstack((-cutset.dot(dpds).dot(1/(stats.norm.pdf(s[-1]-gf))), 1))
             elif systype.lower() == 'parallel':
                 gf = s[-1] - stats.norm.ppf(np.prod(pmarg))
                 dgf = np.hstack((np.dot(-np.prod(pmarg)*(1./pmarg).T,dpds)/stats.norm.pdf(s[-1]-gf),1.))
@@ -424,12 +462,10 @@ class SysReliab(object):
                 intval = np.prod(1-ps)*stats.multivariate_normal.pdf(s,mean=None,cov=np.eye(nparam))
             if systype.lower() == 'general':
                 p = _prob_vector(ps)
-                intval = np.dot(cutset.T, p)*stats.multivariate_normal.pdf(s,mean=None,cov=np.eye(nparam))
-                # how to get cutset need to be further coded
+                intval = cutset.dot(p)*stats.multivariate_normal.pdf(s,mean=None,cov=np.eye(nparam))
             return intval
         systype = self.systype
-        #cutset = self.cutset
-        cutset = None
+        cutset = self.cutset
         beta = self.beta
         if (self.nCSrv is not None) and (self.rmtx is not None):
             ncsrv = self.nCSrv
