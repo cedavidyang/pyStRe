@@ -126,6 +126,7 @@ def _p_vector_mod(pmarg, compn):
 
     return p
 
+
 class CompReliab(object):
 
     def __init__(self, probdata, gfunc, analysisopt=None):
@@ -135,6 +136,7 @@ class CompReliab(object):
         self.probdata = probdata
         self.gfunc = gfunc
         self.analysisopt = analysisopt
+        self.result = None
 
 
     def _step_size_multiproc(self, G, grad_G, u, d, ntrial=6):
@@ -265,6 +267,8 @@ class CompReliab(object):
                         np.norm(np.dot(np.dot(alpha,J_u_x),D_prime))
                 formresults.set_sens_res(imptg,gfunchist, gradGhist, stephist)
 
+            self.result = formresults
+
         return formresults
 
 
@@ -354,7 +358,10 @@ class SysReliab(object):
         beta = np.zeros(ncomp)
         alpha = np.zeros((ncomp, nrv))
         for i, comp in enumerate(self.comps):
-            formresults = comp.form_result()
+            if comp.result is None:
+                formresults = comp.form_result()
+            else:
+                formresults = comp.result
             beta[i] = formresults.beta1
             alpha[i,:] = self._expand_alpha(comp.probdata.names, formresults.alpha)
         self.beta = beta
@@ -363,12 +370,9 @@ class SysReliab(object):
         R=R-np.diag(np.diag(R))+np.eye(R.shape[0])
         self.syscorr = R
 
-    def update_setup_sys(self, compindx):
-        ncomp = np.size(self.comps)
-        nrv = np.size(self.rvnames)
-        beta = np.zeros(ncomp)
-        alpha = np.zeros((ncomp, nrv))
+    def update_setup_sys(self, compindx, newcomps):
         for i in compindx:
+            self.comps[i] = newcomps[i]
             comp = self.comps[i]
             formresults = comp.form_result()
             self.beta[i] = formresults.beta1
