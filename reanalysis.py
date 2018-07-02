@@ -431,10 +431,10 @@ class SysReliab(object):
                 dgf = np.hstack((-cutset.dot(dpds).dot(1/(stats.norm.pdf(s[-1]-gf))), 1))
             elif systype.lower() == 'parallel':
                 gf = s[-1] - stats.norm.ppf(np.prod(pmarg))
-                dgf = np.hstack((np.dot(-np.prod(pmarg)*(1./pmarg).T,dpds)/stats.norm.pdf(s[-1]-gf),1.))
+                dgf = np.hstack((np.dot(-np.prod(pmarg)*(1./pmarg).T,dPds)/stats.norm.pdf(s[-1]-gf),1.))
             elif systype.lower() == 'series':
                 gf = -( s[-1] - stats.norm.ppf(np.prod(1.-pmarg)) )
-                dgf = np.hstack((np.dot(-np.prod(1.-pmarg)*(1./(1.-pmarg)).T,dpds)/stats.norm.pdf(s[-1]-gf),-1.))
+                dgf = np.hstack((np.dot(-np.prod(1.-pmarg)*(1./(1.-pmarg)).T,dPds)/stats.norm.pdf(s[-1]-gf),-1.))
             else:
                 print('unknown system type'); sys.exit(1)
             return gf,dgf
