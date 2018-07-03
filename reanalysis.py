@@ -14,7 +14,7 @@ def _search_dir(G, grad_G, u):
     return d
 
 
-def _gen_DS_solver(corrT, ncsrv, tol, ntrial):
+def _gen_DS_solver(corrT, ncsrv, tol, ntrial, contol=1e-6, opttol=1e-8):
     """ corrT: target correlation
         ncsrv: number of common source random variables
     """
@@ -31,9 +31,9 @@ def _gen_DS_solver(corrT, ncsrv, tol, ntrial):
         corr = corr-np.diag(np.diag(corr))+np.eye(nls)
         normR = np.linalg.norm(corrT-corr, ord='fro')
         return normR
-    def con_gen_DS(r, nls, ncsrv, tol=1e-6):
+    def con_gen_DS(r, nls, ncsrv, contol=contol):
         rmatrix = np.resize(r,(nls,ncsrv))
-        c = (1.-tol) - np.sum(rmatrix**2,axis=1)
+        c = (1.-contol) - np.sum(rmatrix**2,axis=1)
         return c
     #def congrad_gen_DS(r, ncsrv):
         #rmatrix = np.resize(r,(nls,ncsrv))
@@ -60,7 +60,7 @@ def _gen_DS_solver(corrT, ncsrv, tol, ntrial):
         initr = tmpInitr.reshape((nls,ncsrv))
         opres = op.minimize(residual_gen_DS, initr, args=(corrT, ncsrv), bounds=bnds,
                 #constraints={'type':'ineq', 'fun':con_gen_DS, 'jac':congrad_gen_DS, 'args':(nls,ncsrv)}, tol=1e-16,
-                constraints={'type':'ineq', 'fun':con_gen_DS, 'args':(nls,ncsrv)}, tol=1e-16,
+                constraints={'type':'ineq', 'fun':con_gen_DS, 'args':(nls,ncsrv)}, tol=opttol,
                 options={'maxiter':int(1e4), 'disp':False})
         fval = opres.fun
         if np.isnan(fval):
