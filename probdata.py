@@ -143,14 +143,14 @@ class ProbData(object):
         self.ilo = np.linalg.inv(lo)
 
     def x_to_u(self, x):
-        if self.lo is None:
+        if self.ilo is None:
             print "conduct cholesky depcomposition first"
             sys.exit(1)
         else:
             z = np.copy(x)
             for i, rv in enumerate(self.rvs):
                 z[i] = stats.norm.ppf(rv.cdf(x[i]))
-            u = np.dot(self.lo, z)
+            u = self.ilo.dot(z)
         return u
 
     def u_to_x(self, u):
