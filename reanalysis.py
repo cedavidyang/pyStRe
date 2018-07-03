@@ -346,10 +346,11 @@ class SysReliab(object):
 
 
     def _expand_alpha(self, cmpNames, cmpAlpha):
-        alphaDict = dict.fromkeys(self.rvnames, 0.0)
-        for key,alpha in zip(cmpNames,cmpAlpha):
-            alphaDict[key] = alpha
-        return alphaDict.values()
+        alphaall = np.zeros(np.size(self.rvnames))
+        for name,alphai in zip(cmpNames,cmpAlpha):
+            indx = np.where(np.array(self.rvnames) == name)[0][0]
+            alphaall[indx] = alphai
+        return alphaall
 
 
     def _setup_sys(self):
