@@ -19,66 +19,71 @@ def _gen_DS_solver(corrT, ncsrv, tol, ntrial, contol=1e-6, opttol=1e-8):
         ncsrv: number of common source random variables
     """
     nls = corrT.shape[0]
-    lb=-np.ones((nls,ncsrv))
-    ub=np.ones((nls,ncsrv))
+    lb  = np.zeros((nls,ncsrv))
+    ub  = np.ones((nls,ncsrv))
     bnds = np.asfarray([lb.flatten(),ub.flatten()]).T
     #initr = 0.5*np.ones((nls,ncsrv))
 
-    def residual_gen_DS(r, corrT, ncsrv):
+    def residual_gen_DS(r, corrT=corrT, ncsrv=ncsrv):
         nls = corrT.shape[1]
         rmatrix = np.resize(r,(nls,ncsrv))
         corr = np.dot(rmatrix,rmatrix.T)
         corr = corr-np.diag(np.diag(corr))+np.eye(nls)
         normR = np.linalg.norm(corrT-corr, ord='fro')
         return normR
-    def con_gen_DS(r, nls, ncsrv, contol=contol):
+    def con_gen_DS(r, nls=nls, ncsrv=ncsrv, contol=contol):
         rmatrix = np.resize(r,(nls,ncsrv))
         c = (1.-contol) - np.sum(rmatrix**2,axis=1)
         return c
-    #def congrad_gen_DS(r, ncsrv):
-        #rmatrix = np.resize(r,(nls,ncsrv))
-        #gradc = np.zeros((nls,ncsrv*nls))
-        #for icsrv in range(ncsrv):
-            #gc = -2.*np.diag(rmatrix[:,icsrv])
-            #gradc[:,icsrv:(icsrv+ncsrv*nls):ncsrv] = gc
-        #return gradc
+    def congrad_gen_DS(r, nls=nls, ncsrv=ncsrv):
+        rmatrix = np.resize(r,(nls,ncsrv))
+        gradc = []
+        for icsrv in range(ncsrv):
+            gc = -2.*np.diag(rmatrix[:,icsrv])
+            gradc.append(gc)
+        return np.vstack(gradc).T
 
-    #options=optimset('Display','off','TolFun',10^-16,'LargeScale','off',...
-        #'MaxFunEvals',10^5,'MaxIter',10^4,'TolCon',10^-7,'GradConstr','on'); 
-    #[r,fval,exitflag]=fmincon(@(r)residual_gen_DS(r,R),IC,[],[],[],[],...
-        #lb,ub,@(r)cons_gen_DS(r),options);
-    fval = 1.0
-    itrial = 0
-    #initr0 = np.random.rand(nls,ncsrv)*2.-1.
     initr0 = 0.5*np.ones((nls,ncsrv))
-    initr = np.copy(initr0)
-    opres_array = []
-    while fval>tol and itrial<ntrial:
-        indx = np.random.permutation(np.arange(nls*ncsrv))[:int(np.floor(nls*ncsrv/2))]
-        tmpInitr = initr0.flatten()
-        tmpInitr[indx] = -tmpInitr[indx]
-        initr = tmpInitr.reshape((nls,ncsrv))
-        opres = op.minimize(residual_gen_DS, initr, args=(corrT, ncsrv), bounds=bnds,
-                #constraints={'type':'ineq', 'fun':con_gen_DS, 'jac':congrad_gen_DS, 'args':(nls,ncsrv)}, tol=1e-16,
-                constraints={'type':'ineq', 'fun':con_gen_DS, 'args':(nls,ncsrv)}, tol=opttol,
-                options={'maxiter':int(1e4), 'disp':False})
-        fval = opres.fun
-        if np.isnan(fval):
-            opres.x = np.zeros((nls,ncsrv))
-            opres.fun = 1.0
-        opres_array.append(opres)
-        itrial += 1
-    fvals = [opres.fun for opres in opres_array]
-    indx = np.nanargmin(fvals)
-    r = opres_array[indx].x
-    msg = opres_array[indx].message
-    exitflag = opres_array[indx].success
+    initr = initr0.flatten()
+    opres = op.minimize(residual_gen_DS, initr, method='SLSQP', bounds=bnds,
+            constraints={'type':'ineq', 'fun':con_gen_DS, 'jac':congrad_gen_DS},
+            tol=opttol, options={'maxiter':int(1e4), 'disp':False})
+    # opres = op.minimize(residual_gen_DS, initr, method='COBYLA', bounds=bnds,
+            # constraints={'type':'ineq', 'fun':con_gen_DS},
+            # tol=opttol, options={'maxiter':int(1e4), 'disp':False})
+    r = opres.x
+    msg = opres.message
+    exitflag = opres.success
+
+    # opres_array = []
+    # while fval>tol and itrial<ntrial:
+        # indx = np.random.permutation(np.arange(nls*ncsrv))[:int(np.floor(nls*ncsrv/2))]
+        # initr = initr0.flatten()
+        # initr[indx] = -initr[indx]
+        # # opres = op.minimize(residual_gen_DS, initr, args=(corrT, ncsrv), bounds=bnds,
+                # # #constraints={'type':'ineq', 'fun':con_gen_DS, 'jac':congrad_gen_DS, 'args':(nls,ncsrv)}, tol=1e-16,
+                # # constraints={'type':'ineq', 'fun':con_gen_DS, 'args':(nls,ncsrv)}, tol=opttol,
+                # # options={'maxiter':int(1e4), 'disp':False})
+        # opres = op.minimize(residual_gen_DS, initr, args=(corrT, ncsrv), bounds=bnds,
+                # constraints={'type':'ineq', 'fun':con_gen_DS, 'jac':congrad_gen_DS, 'args':(nls,ncsrv)},
+                # tol=opttol, options={'maxiter':int(1e4), 'disp':False})
+        # fval = opres.fun
+        # if np.isnan(fval):
+            # opres.x = np.zeros((nls,ncsrv))
+            # opres.fun = 1.0
+        # opres_array.append(opres)
+        # itrial += 1
+    # fvals = [opres.fun for opres in opres_array]
+    # indx = np.nanargmin(fvals)
+    # r = opres_array[indx].x
+    # msg = opres_array[indx].message
+    # exitflag = opres_array[indx].success
 
     rmatrix = np.resize(r,(nls,ncsrv))
     rescheck=np.sum(rmatrix**2,axis=1)
     if any(rescheck>1):
         rng = rmatrix[rescheck>1,:]
-        numpow = np.abs(np.fix(np.log10(np.sum(rng**2,axis=1)-1.)))-1.
+        numpow = np.abs(np.fix(np.log10(np.sum(rng**2,axis=1,keepdims=True)-1.)))-1.
         rnew = np.fix(rng*(10.**numpow*np.ones((1,rng.shape[1]))))\
             /(10.**numpow*np.ones((1,rng.shape[1])))
         rmatrix[rescheck>1,:] = rnew
@@ -274,20 +279,9 @@ class CompReliab(object):
 
 class SysReliab(object):
 
-    def __init__(self, comps, sysdef, beta=None, syscorr=None):
+    def __init__(self, sysdef, comps=None, beta=None, syscorr=None, rvnames=None):
         """ comps should be a list object."""
-        if np.size(comps)<=1 and (beta is None or syscorr is None):
-            print "more than one component should be provided"
-            sys.exit(1)
-        self.comps = comps
-        self.sysdef = sysdef
-        self.rvnames = []
-        # rv names of all limit states
-        for comp in comps:
-            cmpNames = comp.probdata.names
-            for name in cmpNames:
-                if name not in self.rvnames:
-                    self.rvnames.append(name)
+
         # system definition
         if np.size(sysdef) == 1:
             if sysdef[0]<0:
@@ -298,12 +292,27 @@ class SysReliab(object):
                 print "sysdef with only one zero is not permitted"
         else:
             self.systype = 'general'
-        # system setup if no beta or syscorr is given
-        if beta is None or syscorr is None:
-            self._setup_sys()
-        else:
+
+        if comps is None:
+            if (beta is None) or (syscorr is None) or (rvnames is None):
+                print "ERROR in SysReliab: must provide beta, syscorr, rvnames"
+                sys.exit(1)
+            self.sysdef = sysdef
+            self.rvnames = rvnames
             self.beta=beta
             self.syscorr = syscorr
+        else:
+            self.comps = comps
+            self.sysdef = sysdef
+            self.rvnames = []
+            # rv names of all limit states
+            for comp in comps:
+                cmpNames = comp.probdata.names
+                for name in cmpNames:
+                    if name not in self.rvnames:
+                        self.rvnames.append(name)
+            self._setup_sys()
+
         self.nCSrv = None
         self.rmtx = None
         ncomp = np.max(np.abs(self.sysdef[0]))
@@ -504,7 +513,7 @@ class SysReliab(object):
     def mvn_msr(self, corrDS=None, abstol=1e-12, reltol=1e-12, intLb=-10, intUb=10):
         systype = self.systype
         beta = self.beta
-        nls = len(self.comps)
+        nls = len(self.rvnames)
         if corrDS is None:
             correl = self.syscorrDS[np.triu_indices(nls,1)]
         else:
