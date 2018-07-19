@@ -43,14 +43,23 @@ def _gen_DS_solver(corrT, ncsrv, tol, ntrial, contol=1e-6, opttol=1e-8):
             gradc.append(gc)
         return np.vstack(gradc).T
 
+    consbnds = [{'type': 'ineq', 'fun':con_gen_DS}]
+    for i in xrange(nls*ncsrv):
+        lbi = lb.flatten()[i]
+        ubi = ub.flatten()[i]
+        def ineqi(x,indx=i, lbi=lbi): return x[indx]-lbi
+        consbnds.append({'type': 'ineq', 'fun':ineqi})
+        def ineqj(x,indx=i, ubi=ubi): return ubi-x[indx]
+        consbnds.append({'type': 'ineq', 'fun':ineqj})
+
     initr0 = 0.5*np.ones((nls,ncsrv))
     initr = initr0.flatten()
-    opres = op.minimize(residual_gen_DS, initr, method='SLSQP', bounds=bnds,
-            constraints={'type':'ineq', 'fun':con_gen_DS, 'jac':congrad_gen_DS},
-            tol=opttol, options={'maxiter':int(1e4), 'disp':False})
-    # opres = op.minimize(residual_gen_DS, initr, method='COBYLA', bounds=bnds,
-            # constraints={'type':'ineq', 'fun':con_gen_DS},
+    # opres = op.minimize(residual_gen_DS, initr, method='SLSQP', bounds=bnds,
+            # constraints={'type':'ineq', 'fun':con_gen_DS, 'jac':congrad_gen_DS},
             # tol=opttol, options={'maxiter':int(1e4), 'disp':False})
+    opres = op.minimize(residual_gen_DS, initr, method='COBYLA',
+            constraints=consbnds, tol=opttol,
+            callback=None, options={'maxiter': int(1e4), 'disp':False})
     r = opres.x
     msg = opres.message
     exitflag = opres.success
