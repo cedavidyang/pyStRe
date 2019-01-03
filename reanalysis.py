@@ -324,7 +324,10 @@ class SysReliab(object):
 
         self.nCSrv = None
         self.rmtx = None
-        ncomp = np.max(np.abs(self.sysdef[0]))
+        if self.sysdef[1].lower() == 'event':
+            ncomp = np.size(self.sysdef[0])
+        else:
+            ncomp = np.max(np.abs(self.sysdef[0]))
         C = _event_matrix(ncomp)
         self._sys_event(C)
 
@@ -342,25 +345,30 @@ class SysReliab(object):
         else:
             syscode = np.array(sysdef[0])
             systype = sysdef[1]
-            if systype.lower() == 'link':
-                syscode = -syscode
-            syscode = np.hstack((0,syscode,0))
-            sysnonzero = np.where(syscode!=0)[0]
-            syszero = np.where(syscode==0)[0]
-            int1 = syszero-np.hstack((0,syszero[:-1]))
-            sizeCutSets = int1[int1>1]-1
-            ncutsets = np.max(sizeCutSets.shape)
-            cCutSets = np.zeros((row, ncutsets))
-            for i in xrange(ncutsets):
-                cCutSet = np.ones(row)
-                for j in xrange(sizeCutSets[i]):
-                    comp = syscode[sysnonzero[np.sum(sizeCutSets[:i])+j]]
-                    if comp<0:
-                        cCutSet = cCutSet*(np.ones((row,1))-C[:,abs(comp)-1])
-                    else:
-                        cCutSet = cCutSet*C[:,comp-1]
-                cCutSets[:,i] = cCutSet
-            self.cutset = np.ones(row) - np.prod(np.ones((row,ncutsets))-cCutSets, axis=1)
+            if systype.lower() == 'event':
+                allevent = C
+                fpattern = syscode
+                self.cutset = np.all(allevent==fpattern, axis=1).astype(float)
+            else:
+                if systype.lower() == 'link':
+                    syscode = -syscode
+                syscode = np.hstack((0,syscode,0))
+                sysnonzero = np.where(syscode!=0)[0]
+                syszero = np.where(syscode==0)[0]
+                int1 = syszero-np.hstack((0,syszero[:-1]))
+                sizeCutSets = int1[int1>1]-1
+                ncutsets = np.max(sizeCutSets.shape)
+                cCutSets = np.zeros((row, ncutsets))
+                for i in xrange(ncutsets):
+                    cCutSet = np.ones(row)
+                    for j in xrange(sizeCutSets[i]):
+                        comp = syscode[sysnonzero[np.sum(sizeCutSets[:i])+j]]
+                        if comp<0:
+                            cCutSet = cCutSet*(np.ones((row,1))-C[:,abs(comp)-1])
+                        else:
+                            cCutSet = cCutSet*C[:,comp-1]
+                    cCutSets[:,i] = cCutSet
+                self.cutset = np.ones(row) - np.prod(np.ones((row,ncutsets))-cCutSets, axis=1)
 
 
     def _expand_alpha(self, cmpNames, cmpAlpha):
